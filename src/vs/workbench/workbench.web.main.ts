@@ -66,7 +66,7 @@ import { IContextMenuService } from 'vs/platform/contextview/browser/contextView
 import { ContextMenuService } from 'vs/platform/contextview/browser/contextMenuService';
 import { IExtensionTipsService } from 'vs/platform/extensionManagement/common/extensionManagement';
 import { ExtensionTipsService } from 'vs/platform/extensionManagement/common/extensionTipsService';
-import { IWorkbenchExtensioManagementService } from 'vs/workbench/services/extensionManagement/common/extensionManagement';
+import { IWorkbenchExtensionManagementService } from 'vs/workbench/services/extensionManagement/common/extensionManagement';
 import { ExtensionManagementService } from 'vs/workbench/services/extensionManagement/common/extensionManagementService';
 import { ILoggerService } from 'vs/platform/log/common/log';
 import { FileLoggerService } from 'vs/platform/log/common/fileLog';
@@ -79,13 +79,15 @@ import { UserDataSyncService } from 'vs/platform/userDataSync/common/userDataSyn
 import { IUserDataSyncAccountService, UserDataSyncAccountService } from 'vs/platform/userDataSync/common/userDataSyncAccount';
 import { UserDataAutoSyncService } from 'vs/platform/userDataSync/common/userDataAutoSyncService';
 import { AccessibilityService } from 'vs/platform/accessibility/common/accessibilityService';
+import { ICustomEndpointTelemetryService } from 'vs/platform/telemetry/common/telemetry';
+import { NullEndpointTelemetryService } from 'vs/platform/telemetry/common/telemetryUtils';
 import { ITitleService } from 'vs/workbench/services/title/common/titleService';
 import { TitlebarPart } from 'vs/workbench/browser/parts/titlebar/titlebarPart';
 import { ITimerService, TimerService } from 'vs/workbench/services/timer/browser/timerService';
 import { IConfigurationResolverService } from 'vs/workbench/services/configurationResolver/common/configurationResolver';
 import { ConfigurationResolverService } from 'vs/workbench/services/configurationResolver/browser/configurationResolverService';
 
-registerSingleton(IWorkbenchExtensioManagementService, ExtensionManagementService);
+registerSingleton(IWorkbenchExtensionManagementService, ExtensionManagementService);
 registerSingleton(IAccessibilityService, AccessibilityService, true);
 registerSingleton(IContextMenuService, ContextMenuService);
 registerSingleton(ILoggerService, FileLoggerService);
@@ -100,6 +102,7 @@ registerSingleton(ITitleService, TitlebarPart);
 registerSingleton(IExtensionTipsService, ExtensionTipsService);
 registerSingleton(ITimerService, TimerService);
 registerSingleton(IConfigurationResolverService, ConfigurationResolverService, true);
+registerSingleton(ICustomEndpointTelemetryService, NullEndpointTelemetryService, true);
 
 //#endregion
 

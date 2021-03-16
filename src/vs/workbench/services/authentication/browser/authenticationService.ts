@@ -3,27 +3,31 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as nls from 'vs/nls';
+import { flatten } from 'vs/base/common/arrays';
 import { Emitter, Event } from 'vs/base/common/event';
+import { IJSONSchema } from 'vs/base/common/jsonSchema';
 import { Disposable, IDisposable, MutableDisposable } from 'vs/base/common/lifecycle';
-import { AuthenticationSession, AuthenticationSessionsChangeEvent, AuthenticationProviderInformation } from 'vs/editor/common/modes';
+import { isWeb } from 'vs/base/common/platform';
+import { isFalsyOrWhitespace } from 'vs/base/common/strings';
+import { isString } from 'vs/base/common/types';
+import { AuthenticationProviderInformation, AuthenticationSession, AuthenticationSessionsChangeEvent } from 'vs/editor/common/modes';
+import * as nls from 'vs/nls';
+import { MenuId, MenuRegistry } from 'vs/platform/actions/common/actions';
+import { CommandsRegistry } from 'vs/platform/commands/common/commands';
+import { ContextKeyExpr } from 'vs/platform/contextkey/common/contextkey';
+import { IDialogService } from 'vs/platform/dialogs/common/dialogs';
 import { registerSingleton } from 'vs/platform/instantiation/common/extensions';
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
-import { MainThreadAuthenticationProvider } from 'vs/workbench/api/browser/mainThreadAuthentication';
-import { MenuRegistry, MenuId } from 'vs/platform/actions/common/actions';
-import { ContextKeyExpr } from 'vs/platform/contextkey/common/contextkey';
-import { CommandsRegistry } from 'vs/platform/commands/common/commands';
-import { IActivityService, NumberBadge } from 'vs/workbench/services/activity/common/activity';
-import { IStorageService, StorageScope, StorageTarget } from 'vs/platform/storage/common/storage';
-import { IWorkbenchEnvironmentService } from 'vs/workbench/services/environment/common/environmentService';
-import { IProductService } from 'vs/platform/product/common/productService';
-import { isString } from 'vs/base/common/types';
-import { ActivationKind, IExtensionService } from 'vs/workbench/services/extensions/common/extensions';
-import { IDialogService } from 'vs/platform/dialogs/common/dialogs';
 import { Severity } from 'vs/platform/notification/common/notification';
+import { IProductService } from 'vs/platform/product/common/productService';
 import { IQuickInputService } from 'vs/platform/quickinput/common/quickInput';
+import { IStorageService, StorageScope, StorageTarget } from 'vs/platform/storage/common/storage';
+import { MainThreadAuthenticationProvider } from 'vs/workbench/api/browser/mainThreadAuthentication';
+import { IActivityService, NumberBadge } from 'vs/workbench/services/activity/common/activity';
+import { IWorkbenchEnvironmentService } from 'vs/workbench/services/environment/common/environmentService';
+import { ActivationKind, IExtensionService } from 'vs/workbench/services/extensions/common/extensions';
+import { ExtensionsRegistry } from 'vs/workbench/services/extensions/common/extensionsRegistry';
 import { IRemoteAgentService } from 'vs/workbench/services/remote/common/remoteAgentService';
-import { isWeb } from 'vs/base/common/platform';
 
 export function getAuthenticationProviderActivationEvent(id: string): string { return `onAuthenticationRequest:${id}`; }
 
@@ -33,7 +37,7 @@ export interface IAccountUsage {
 	lastUsed: number;
 }
 
-const VSO_ALLOWED_EXTENSIONS = ['github.vscode-pull-request-github', 'github.vscode-pull-request-github-insiders', 'vscode.git', 'ms-vsonline.vsonline', 'vscode.github-browser', 'ms-vscode.github-browser', 'github.codespaces'];
+const VSO_ALLOWED_EXTENSIONS = ['github.vscode-pull-request-github', 'github.vscode-pull-request-github-insiders', 'vscode.git', 'ms-vsonline.vsonline', 'vscode.github-browser', 'ms-vscode.github-browser', 'ms-vscode.remotehub', 'ms-vscode.remotehub-insiders', 'github.codespaces'];
 
 export function readAccountUsages(storageService: IStorageService, providerId: string, accountName: string,): IAccountUsage[] {
 	const accountKey = `${providerId}-${accountName}-usages`;
@@ -117,6 +121,11 @@ export interface IAuthenticationService {
 	readonly onDidUnregisterAuthenticationProvider: Event<AuthenticationProviderInformation>;
 
 	readonly onDidChangeSessions: Event<{ providerId: string, label: string, event: AuthenticationSessionsChangeEvent }>;
+
+	// TODO @RMacfarlane completely remove this property
+	declaredProviders: AuthenticationProviderInformation[];
+	readonly onDidChangeDeclaredProviders: Event<AuthenticationProviderInformation[]>;
+
 	getSessions(id: string, scopes?: string[], activateImmediate?: boolean): Promise<ReadonlyArray<AuthenticationSession>>;
 	getLabel(providerId: string): string;
 	supportsMultipleAccounts(providerId: string): boolean;
@@ -159,6 +168,29 @@ CommandsRegistry.registerCommand('workbench.getCodeExchangeProxyEndpoints', func
 	return environmentService.options?.codeExchangeProxyEndpoints;
 });
 
+const authenticationDefinitionSchema: IJSONSchema = {
+	type: 'object',
+	additionalProperties: false,
+	properties: {
+		id: {
+			type: 'string',
+			description: nls.localize('authentication.id', 'The id of the authentication provider.')
+		},
+		label: {
+			type: 'string',
+			description: nls.localize('authentication.label', 'The human readable name of the authentication provider.'),
+		}
+	}
+};
+
+const authenticationExtPoint = ExtensionsRegistry.registerExtensionPoint<AuthenticationProviderInformation[]>({
+	extensionPoint: 'authentication',
+	jsonSchema: {
+		description: nls.localize({ key: 'authenticationExtensionPoint', comment: [`'Contributes' means adds here`] }, 'Contributes authentication'),
+		type: 'array',
+		items: authenticationDefinitionSchema
+	}
+});
 
 export class AuthenticationService extends Disposable implements IAuthenticationService {
 	declare readonly _serviceBrand: undefined;
@@ -169,6 +201,11 @@ export class AuthenticationService extends Disposable implements IAuthentication
 
 	private _authenticationProviders: Map<string, MainThreadAuthenticationProvider> = new Map<string, MainThreadAuthenticationProvider>();
 
+	/**
+	 * All providers that have been statically declared by extensions. These may not be registered.
+	 */
+	declaredProviders: AuthenticationProviderInformation[] = [];
+
 	private _onDidRegisterAuthenticationProvider: Emitter<AuthenticationProviderInformation> = this._register(new Emitter<AuthenticationProviderInformation>());
 	readonly onDidRegisterAuthenticationProvider: Event<AuthenticationProviderInformation> = this._onDidRegisterAuthenticationProvider.event;
 
@@ -177,6 +214,9 @@ export class AuthenticationService extends Disposable implements IAuthentication
 
 	private _onDidChangeSessions: Emitter<{ providerId: string, label: string, event: AuthenticationSessionsChangeEvent }> = this._register(new Emitter<{ providerId: string, label: string, event: AuthenticationSessionsChangeEvent }>());
 	readonly onDidChangeSessions: Event<{ providerId: string, label: string, event: AuthenticationSessionsChangeEvent }> = this._onDidChangeSessions.event;
+
+	private _onDidChangeDeclaredProviders: Emitter<AuthenticationProviderInformation[]> = this._register(new Emitter<AuthenticationProviderInformation[]>());
+	readonly onDidChangeDeclaredProviders: Event<AuthenticationProviderInformation[]> = this._onDidChangeDeclaredProviders.event;
 
 	constructor(
 		@IActivityService private readonly activityService: IActivityService,
@@ -193,6 +233,38 @@ export class AuthenticationService extends Disposable implements IAuthentication
 				title: nls.localize('loading', "Loading..."),
 				precondition: ContextKeyExpr.false()
 			},
+		});
+
+		authenticationExtPoint.setHandler((extensions, { added, removed }) => {
+			added.forEach(point => {
+				for (const provider of point.value) {
+					if (isFalsyOrWhitespace(provider.id)) {
+						point.collector.error(nls.localize('authentication.missingId', 'An authentication contribution must specify an id.'));
+						continue;
+					}
+
+					if (isFalsyOrWhitespace(provider.label)) {
+						point.collector.error(nls.localize('authentication.missingLabel', 'An authentication contribution must specify a label.'));
+						continue;
+					}
+
+					if (!this.declaredProviders.some(p => p.id === provider.id)) {
+						this.declaredProviders.push(provider);
+					} else {
+						point.collector.error(nls.localize('authentication.idConflict', "This authentication id '{0}' has already been registered", provider.id));
+					}
+				}
+			});
+
+			const removedExtPoints = flatten(removed.map(r => r.value));
+			removedExtPoints.forEach(point => {
+				const index = this.declaredProviders.findIndex(provider => provider.id === point.id);
+				if (index > -1) {
+					this.declaredProviders.splice(index, 1);
+				}
+			});
+
+			this._onDidChangeDeclaredProviders.fire(this.declaredProviders);
 		});
 	}
 

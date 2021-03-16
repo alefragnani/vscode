@@ -60,11 +60,8 @@ export enum NotebookRunState {
 
 export const notebookDocumentMetadataDefaults: Required<NotebookDocumentMetadata> = {
 	editable: true,
-	runnable: true,
 	cellEditable: true,
-	cellRunnable: true,
 	cellHasExecutionOrder: true,
-	displayOrder: NOTEBOOK_DISPLAY_ORDER,
 	custom: {},
 	runState: NotebookRunState.Idle,
 	trusted: true
@@ -72,11 +69,8 @@ export const notebookDocumentMetadataDefaults: Required<NotebookDocumentMetadata
 
 export interface NotebookDocumentMetadata {
 	editable: boolean;
-	runnable: boolean;
 	cellEditable: boolean;
-	cellRunnable: boolean;
 	cellHasExecutionOrder: boolean;
-	displayOrder?: (string | glob.IRelativePattern)[];
 	custom?: { [key: string]: unknown };
 	runState?: NotebookRunState;
 	trusted: boolean;
@@ -91,7 +85,6 @@ export enum NotebookCellRunState {
 
 export interface NotebookCellMetadata {
 	editable?: boolean;
-	runnable?: boolean;
 	breakpointMargin?: boolean;
 	hasExecutionOrder?: boolean;
 	executionOrder?: number;
@@ -190,9 +183,9 @@ export interface INotebookTextModel {
 }
 
 export type NotebookCellTextModelSplice<T> = [
-	number /* start */,
-	number,
-	T[]
+	start: number,
+	deleteCount: number,
+	newItems: T[]
 ];
 
 export type NotebookCellOutputsSplice = [
@@ -213,9 +206,9 @@ export interface IMainCellDto {
 }
 
 export type NotebookCellsSplice2 = [
-	number /* start */,
-	number /* delete count */,
-	IMainCellDto[]
+	start: number,
+	deleteCount: number,
+	newItems: IMainCellDto[]
 ];
 
 export enum NotebookCellsChangeType {
@@ -312,10 +305,7 @@ export interface ISelectionHandleState {
 
 export interface ISelectionIndexState {
 	kind: SelectionStateType.Index;
-
-	/**
-	 * [primarySelection, ...secondarySelections]
-	 */
+	focus: ICellRange;
 	selections: ICellRange[];
 }
 
@@ -473,6 +463,7 @@ export namespace CellUri {
 type MimeTypeInfo = {
 	alwaysSecure?: boolean;
 	supportedByCore?: boolean;
+	mergeable?: boolean;
 };
 
 const _mimeTypeInfo = new Map<string, MimeTypeInfo>([
@@ -486,6 +477,9 @@ const _mimeTypeInfo = new Map<string, MimeTypeInfo>([
 	['image/jpeg', { supportedByCore: true }],
 	['text/x-javascript', { supportedByCore: true }],
 	['application/x.notebook.error-traceback', { alwaysSecure: true, supportedByCore: true }],
+	['application/x.notebook.stream', { alwaysSecure: true, supportedByCore: true, mergeable: true }],
+	['application/x.notebook.stdout', { alwaysSecure: true, supportedByCore: true, mergeable: true }],
+	['application/x.notebook.stderr', { alwaysSecure: true, supportedByCore: true, mergeable: true }],
 ]);
 
 export function mimeTypeIsAlwaysSecure(mimeType: string): boolean {
@@ -494,6 +488,10 @@ export function mimeTypeIsAlwaysSecure(mimeType: string): boolean {
 
 export function mimeTypeSupportedByCore(mimeType: string) {
 	return _mimeTypeInfo.get(mimeType)?.supportedByCore ?? false;
+}
+
+export function mimeTypeIsMergeable(mimeType: string): boolean {
+	return _mimeTypeInfo.get(mimeType)?.mergeable ?? false;
 }
 
 // if (isWindows) {
@@ -510,20 +508,12 @@ function matchGlobUniversal(pattern: string, path: string) {
 }
 
 
-function getMimeTypeOrder(mimeType: string, userDisplayOrder: string[], documentDisplayOrder: string[], defaultOrder: string[]) {
+function getMimeTypeOrder(mimeType: string, userDisplayOrder: string[], defaultOrder: string[]) {
 	let order = 0;
 	for (let i = 0; i < userDisplayOrder.length; i++) {
 		if (matchGlobUniversal(userDisplayOrder[i], mimeType)) {
 			return order;
 		}
-		order++;
-	}
-
-	for (let i = 0; i < documentDisplayOrder.length; i++) {
-		if (matchGlobUniversal(documentDisplayOrder[i], mimeType)) {
-			return order;
-		}
-
 		order++;
 	}
 
@@ -538,12 +528,8 @@ function getMimeTypeOrder(mimeType: string, userDisplayOrder: string[], document
 	return order;
 }
 
-export function sortMimeTypes(mimeTypes: string[], userDisplayOrder: string[], documentDisplayOrder: string[], defaultOrder: string[]) {
-	const sorted = mimeTypes.sort((a, b) => {
-		return getMimeTypeOrder(a, userDisplayOrder, documentDisplayOrder, defaultOrder) - getMimeTypeOrder(b, userDisplayOrder, documentDisplayOrder, defaultOrder);
-	});
-
-	return sorted;
+export function sortMimeTypes(mimeTypes: string[], userDisplayOrder: string[], defaultOrder: string[]) {
+	return mimeTypes.sort((a, b) => getMimeTypeOrder(a, userDisplayOrder, defaultOrder) - getMimeTypeOrder(b, userDisplayOrder, defaultOrder));
 }
 
 interface IMutableSplice<T> extends ISplice<T> {
@@ -672,19 +658,6 @@ export interface ICellRange {
 	 * zero based index
 	 */
 	end: number;
-}
-
-export interface IEditor extends editorCommon.ICompositeCodeEditor {
-	readonly onDidChangeModel: Event<NotebookTextModel | undefined>;
-	readonly onDidFocusEditorWidget: Event<void>;
-	readonly onDidChangeVisibleRanges: Event<void>;
-	readonly onDidChangeSelection: Event<void>;
-	getSelection(): ICellRange | undefined;
-	getSelections(): ICellRange[];
-	visibleRanges: ICellRange[];
-	textModel?: NotebookTextModel;
-	getId(): string;
-	hasFocus(): boolean;
 }
 
 export enum NotebookEditorPriority {
@@ -824,6 +797,7 @@ export interface INotebookDecorationRenderOptions {
 
 
 export function cellIndexesToRanges(indexes: number[]) {
+	indexes.sort((a, b) => a - b);
 	const first = indexes.shift();
 
 	if (first === undefined) {
@@ -850,4 +824,37 @@ export function cellRangesToIndexes(ranges: ICellRange[]) {
 	}, [] as number[]);
 
 	return indexes;
+}
+
+/**
+ * todo@rebornix notebookBrowser.reduceCellRanges
+ * @returns
+ */
+export function reduceRanges(ranges: ICellRange[]) {
+	const sorted = ranges.sort((a, b) => a.start - b.start);
+	const first = sorted[0];
+
+	if (!first) {
+		return [];
+	}
+
+	return sorted.reduce((prev: ICellRange[], curr) => {
+		const last = prev[prev.length - 1];
+		if (last.end >= curr.start) {
+			last.end = Math.max(last.end, curr.end);
+		} else {
+			prev.push(curr);
+		}
+		return prev;
+	}, [first] as ICellRange[]);
+}
+
+/**
+ * todo@rebornix test and sort
+ * @param range
+ * @param other
+ * @returns
+ */
+export function cellRangeContains(range: ICellRange, other: ICellRange): boolean {
+	return other.start >= range.start && other.end <= range.end;
 }

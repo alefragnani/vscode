@@ -23,7 +23,6 @@ import { INotebookCellStatusBarService } from 'vs/workbench/contrib/notebook/com
 import { NotebookCellsChangeType } from 'vs/workbench/contrib/notebook/common/notebookCommon';
 import { collapsedIcon, expandedIcon } from 'vs/workbench/contrib/notebook/browser/notebookIcons';
 import { renderIcon } from 'vs/base/browser/ui/iconLabel/iconLabels';
-import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 
 interface IMarkdownRenderStrategy extends IDisposable {
 	update(): void;
@@ -76,7 +75,9 @@ class BuiltinMarkdownRenderer extends Disposable implements IMarkdownRenderStrat
 		} else {
 			this.localDisposables.clear();
 			this.localDisposables.add(markdownRenderer.onDidRenderAsync(() => {
-				this.viewCell.renderedMarkdownHeight = this.container.clientHeight;
+				if (this.viewCell.editState === CellEditState.Preview) {
+					this.viewCell.renderedMarkdownHeight = this.container.clientHeight;
+				}
 				this.relayoutCell();
 			}));
 
@@ -118,17 +119,17 @@ export class StatefulMarkdownCell extends Disposable {
 		private readonly templateData: MarkdownCellRenderTemplate,
 		private editorOptions: IEditorOptions,
 		private readonly renderedEditors: Map<ICellViewModel, ICodeEditor | undefined>,
+		options: { useRenderer: boolean },
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@INotebookCellStatusBarService readonly notebookCellStatusBarService: INotebookCellStatusBarService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
-		@IConfigurationService private readonly configurationSerivce: IConfigurationService
 	) {
 		super();
 
 		this.markdownContainer = templateData.cellContainer;
 		this.editorPart = templateData.editorPart;
+		this.useRenderer = options.useRenderer;
 
-		this.useRenderer = !!(this.configurationSerivce.getValue<string>('notebook.experimental.useMarkdownRenderer'));
 		if (this.useRenderer) {
 			this.templateData.container.classList.toggle('webview-backed-markdown-cell', true);
 			this.renderStrategy = new WebviewMarkdownRenderer(this.notebookEditor, this.viewCell);
@@ -192,8 +193,11 @@ export class StatefulMarkdownCell extends Disposable {
 			}
 		}));
 
-		// Update for selection
 		if (this.useRenderer) {
+			// the markdown preview's height might already be updated after the renderer calls `element.getHeight()`
+			this.relayoutCell();
+
+			// Update for selection
 			this._register(this.notebookEditor.onDidChangeSelection(() => {
 				const selectedCells = this.notebookEditor.getSelectionViewModels();
 				const isSelected = selectedCells.length > 1 && selectedCells.some(selectedCell => selectedCell === viewCell);
@@ -277,7 +281,6 @@ export class StatefulMarkdownCell extends Disposable {
 	}
 
 	dispose() {
-		this.notebookEditor.removeMarkdownPreview(this.viewCell);
 		this.localDisposables.dispose();
 		this.viewCell.detachTextEditor();
 		super.dispose();
@@ -308,6 +311,11 @@ export class StatefulMarkdownCell extends Disposable {
 		DOM.show(this.editorPart);
 		DOM.hide(this.markdownContainer);
 		DOM.hide(this.templateData.collapsedPart);
+
+		if (this.useRenderer) {
+			this.notebookEditor.hideMarkdownPreview(this.viewCell);
+		}
+
 		this.templateData.container.classList.toggle('collapsed', false);
 
 		if (this.editor) {
@@ -335,15 +343,16 @@ export class StatefulMarkdownCell extends Disposable {
 			const editorContextKeyService = this.contextKeyService.createScoped(this.templateData.editorPart);
 			EditorContextKeys.inCompositeEditor.bindTo(editorContextKeyService).set(true);
 			const editorInstaService = this.instantiationService.createChild(new ServiceCollection([IContextKeyService, editorContextKeyService]));
+			this._register(editorContextKeyService);
 
-			this.editor = editorInstaService.createInstance(CodeEditorWidget, this.templateData.editorContainer, {
+			this.editor = this._register(editorInstaService.createInstance(CodeEditorWidget, this.templateData.editorContainer, {
 				...this.editorOptions,
 				dimension: {
 					width: width,
 					height: editorHeight
 				},
 				// overflowWidgetsDomNode: this.notebookEditor.getOverflowContainerDomNode()
-			}, {});
+			}, {}));
 			this.templateData.currentEditor = this.editor;
 
 			const cts = new CancellationTokenSource();

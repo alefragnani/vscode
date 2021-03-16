@@ -664,156 +664,6 @@ declare module 'vscode' {
 
 	//#endregion
 
-	//#region inline value provider: https://github.com/microsoft/vscode/issues/105690
-
-	/**
-	 * The inline values provider interface defines the contract between extensions and the VS Code debugger inline values feature.
-	 * In this contract the provider returns inline value information for a given document range
-	 * and VS Code shows this information in the editor at the end of lines.
-	 */
-	export interface InlineValuesProvider {
-
-		/**
-		 * An optional event to signal that inline values have changed.
-		 * @see [EventEmitter](#EventEmitter)
-		 */
-		onDidChangeInlineValues?: Event<void> | undefined;
-
-		/**
-		 * Provide "inline value" information for a given document and range.
-		 * VS Code calls this method whenever debugging stops in the given document.
-		 * The returned inline values information is rendered in the editor at the end of lines.
-		 *
-		 * @param document The document for which the inline values information is needed.
-		 * @param viewPort The visible document range for which inline values should be computed.
-		 * @param context A bag containing contextual information like the current location.
-		 * @param token A cancellation token.
-		 * @return An array of InlineValueDescriptors or a thenable that resolves to such. The lack of a result can be
-		 * signaled by returning `undefined` or `null`.
-		 */
-		provideInlineValues(document: TextDocument, viewPort: Range, context: InlineValueContext, token: CancellationToken): ProviderResult<InlineValue[]>;
-	}
-
-	/**
-	 * A value-object that contains contextual information when requesting inline values from a InlineValuesProvider.
-	 */
-	export interface InlineValueContext {
-
-		/**
-		 * Debug Adapter Protocol ID of the the stack frame.
-		 */
-		readonly frameId: number;
-
-		/**
-		 * The document range where execution has stopped.
-		 * Typically the end position of the range denotes the line where the inline values are shown.
-		 */
-		readonly stoppedLocation: Range;
-	}
-
-	/**
-	 * Inline value information can be provided by different means:
-	 * - directly as a text value (class InlineValueText).
-	 * - as a name to use for a variable lookup (class InlineValueVariableLookup)
-	 * - as an evaluatable expression (class InlineValueEvaluatableExpression)
-	 * The InlineValue types combines all inline value types into one type.
-	 */
-	export type InlineValue = InlineValueText | InlineValueVariableLookup | InlineValueEvaluatableExpression;
-
-	/**
-	 * Provide inline value as text.
-	 */
-	export class InlineValueText {
-		/**
-		 * The document range for which the inline value applies.
-		 */
-		readonly range: Range;
-		/**
-		 * The text of the inline value.
-		 */
-		readonly text: string;
-		/**
-		 * Creates a new InlineValueText object.
-		 *
-		 * @param range The document line where to show the inline value.
-		 * @param text The value to be shown for the line.
-		 */
-		constructor(range: Range, text: string);
-	}
-
-	/**
-	 * Provide inline value through a variable lookup.
-	 * If only a range is specified, the variable name will be extracted from the underlying document.
-	 * An optional variable name can be used to override the extracted name.
-	 */
-	export class InlineValueVariableLookup {
-		/**
-		 * The document range for which the inline value applies.
-		 * The range is used to extract the variable name from the underlying document.
-		 */
-		readonly range: Range;
-		/**
-		 * If specified the name of the variable to look up.
-		 */
-		readonly variableName?: string;
-		/**
-		 * How to perform the lookup.
-		 */
-		readonly caseSensitiveLookup: boolean;
-		/**
-		 * Creates a new InlineValueVariableLookup object.
-		 *
-		 * @param range The document line where to show the inline value.
-		 * @param variableName The name of the variable to look up.
-		 * @param caseSensitiveLookup How to perform the lookup. If missing lookup is case sensitive.
-		 */
-		constructor(range: Range, variableName?: string, caseSensitiveLookup?: boolean);
-	}
-
-	/**
-	 * Provide an inline value through an expression evaluation.
-	 * If only a range is specified, the expression will be extracted from the underlying document.
-	 * An optional expression can be used to override the extracted expression.
-	 */
-	export class InlineValueEvaluatableExpression {
-		/**
-		 * The document range for which the inline value applies.
-		 * The range is used to extract the evaluatable expression from the underlying document.
-		 */
-		readonly range: Range;
-		/**
-		 * If specified the expression overrides the extracted expression.
-		 */
-		readonly expression?: string;
-		/**
-		 * Creates a new InlineValueEvaluatableExpression object.
-		 *
-		 * @param range The range in the underlying document from which the evaluatable expression is extracted.
-		 * @param expression If specified overrides the extracted expression.
-		 */
-		constructor(range: Range, expression?: string);
-	}
-
-	export namespace languages {
-
-		/**
-		 * Register a provider that returns data for the debugger's 'inline value' feature.
-		 * Whenever the generic VS Code debugger has stopped in a source file, providers registered for the language of the file
-		 * are called to return textual data that will be shown in the editor at the end of lines.
-		 *
-		 * Multiple providers can be registered for a language. In that case providers are asked in
-		 * parallel and the results are merged. A failing provider (rejected promise or exception) will
-		 * not cause a failure of the whole operation.
-		 *
-		 * @param selector A selector that defines the documents this provider is applicable to.
-		 * @param provider An inline values provider.
-		 * @return A [disposable](#Disposable) that unregisters this provider when being disposed.
-		 */
-		export function registerInlineValuesProvider(selector: DocumentSelector, provider: InlineValuesProvider): Disposable;
-	}
-
-	//#endregion
-
 	// eslint-disable-next-line vscode-dts-region-comments
 	//#region @weinand: variables view action contributions
 
@@ -1074,6 +924,20 @@ declare module 'vscode' {
 
 	//#endregion
 
+	//#region Provide a way for custom editors to process untitled files without relying on textDocument https://github.com/microsoft/vscode/issues/115631
+	/**
+	 * Additional information about the opening custom document.
+	 */
+	interface CustomDocumentOpenContext {
+		/**
+		 * If the URI is an untitled file, this will be populated with the byte data of that file
+		 *
+		 * If this is provided, your extension should utilize this byte data rather than executing fs APIs on the URI passed in
+		 */
+		readonly untitledDocumentData?: Uint8Array;
+	}
+	//#endregion
+
 	//#region https://github.com/microsoft/vscode/issues/106744, Notebooks (misc)
 
 	export enum NotebookCellKind {
@@ -1120,30 +984,25 @@ declare module 'vscode' {
 		readonly statusMessage?: string;
 
 		// run related API, will be removed
-		readonly runnable?: boolean;
 		readonly hasExecutionOrder?: boolean;
 		readonly executionOrder?: number;
 		readonly runState?: NotebookCellRunState;
 		readonly runStartTime?: number;
 		readonly lastRunDuration?: number;
 
-		constructor(editable?: boolean, breakpointMargin?: boolean, runnable?: boolean, hasExecutionOrder?: boolean, executionOrder?: number, runState?: NotebookCellRunState, runStartTime?: number, statusMessage?: string, lastRunDuration?: number, inputCollapsed?: boolean, outputCollapsed?: boolean, custom?: Record<string, any>)
+		constructor(editable?: boolean, breakpointMargin?: boolean, hasExecutionOrder?: boolean, executionOrder?: number, runState?: NotebookCellRunState, runStartTime?: number, statusMessage?: string, lastRunDuration?: number, inputCollapsed?: boolean, outputCollapsed?: boolean, custom?: Record<string, any>)
 
-		with(change: { editable?: boolean | null, breakpointMargin?: boolean | null, runnable?: boolean | null, hasExecutionOrder?: boolean | null, executionOrder?: number | null, runState?: NotebookCellRunState | null, runStartTime?: number | null, statusMessage?: string | null, lastRunDuration?: number | null, inputCollapsed?: boolean | null, outputCollapsed?: boolean | null, custom?: Record<string, any> | null, }): NotebookCellMetadata;
+		with(change: { editable?: boolean | null, breakpointMargin?: boolean | null, hasExecutionOrder?: boolean | null, executionOrder?: number | null, runState?: NotebookCellRunState | null, runStartTime?: number | null, statusMessage?: string | null, lastRunDuration?: number | null, inputCollapsed?: boolean | null, outputCollapsed?: boolean | null, custom?: Record<string, any> | null, }): NotebookCellMetadata;
 	}
 
 	// todo@API support ids https://github.com/jupyter/enhancement-proposals/blob/master/62-cell-id/cell-id.md
 	export interface NotebookCell {
 		readonly index: number;
 		readonly notebook: NotebookDocument;
-		readonly cellKind: NotebookCellKind;
-		// todo@API duplicates #document.uri
-		readonly uri: Uri;
-		// todo@API duplicates #document.languageId
-		readonly language: string;
+		readonly kind: NotebookCellKind;
 		readonly document: TextDocument;
-		readonly outputs: readonly NotebookCellOutput[];
 		readonly metadata: NotebookCellMetadata
+		readonly outputs: ReadonlyArray<NotebookCellOutput>;
 	}
 
 	export class NotebookDocumentMetadata {
@@ -1168,23 +1027,15 @@ declare module 'vscode' {
 		 */
 		readonly trusted: boolean;
 
-		// todo@API how does glob apply to mime times?
-		// todo@API remove displayOrder
-		readonly displayOrder: GlobPattern[];
-
 		// todo@API is this a kernel property?
 		readonly cellHasExecutionOrder: boolean;
 
-		// run related, remove infer from kernel, exec
-		// todo@API infer from kernel
 		// todo@API remove
-		readonly runnable: boolean;
-		readonly cellRunnable: boolean;
 		readonly runState: NotebookRunState;
 
-		constructor(editable?: boolean, runnable?: boolean, cellEditable?: boolean, cellRunnable?: boolean, cellHasExecutionOrder?: boolean, displayOrder?: GlobPattern[], custom?: { [key: string]: any; }, runState?: NotebookRunState, trusted?: boolean);
+		constructor(editable?: boolean, cellEditable?: boolean, cellHasExecutionOrder?: boolean, custom?: { [key: string]: any; }, runState?: NotebookRunState, trusted?: boolean);
 
-		with(change: { editable?: boolean | null, runnable?: boolean | null, cellEditable?: boolean | null, cellRunnable?: boolean | null, cellHasExecutionOrder?: boolean | null, displayOrder?: GlobPattern[] | null, custom?: { [key: string]: any; } | null, runState?: NotebookRunState | null, trusted?: boolean | null, }): NotebookDocumentMetadata
+		with(change: { editable?: boolean | null, cellEditable?: boolean | null, cellHasExecutionOrder?: boolean | null, custom?: { [key: string]: any; } | null, runState?: NotebookRunState | null, trusted?: boolean | null, }): NotebookDocumentMetadata
 	}
 
 	export interface NotebookDocumentContentOptions {
@@ -1204,15 +1055,18 @@ declare module 'vscode' {
 	export interface NotebookDocument {
 		readonly uri: Uri;
 		readonly version: number;
+
 		// todo@API don't have this...
 		readonly fileName: string;
-		// todo@API should we really expose this?
-		readonly viewType: string;
+
 		readonly isDirty: boolean;
 		readonly isUntitled: boolean;
 		readonly cells: ReadonlyArray<NotebookCell>;
-		readonly contentOptions: NotebookDocumentContentOptions;
+
 		readonly metadata: NotebookDocumentMetadata;
+
+		// todo@API should we really expose this?
+		readonly viewType: string;
 
 		/**
 		 * Save the document. The saving will be handled by the corresponding content provider
@@ -1231,6 +1085,8 @@ declare module 'vscode' {
 		 * exclusive
 		 */
 		readonly end: number;
+
+		readonly isEmpty: boolean;
 
 		constructor(start: number, end: number);
 	}
@@ -1264,7 +1120,7 @@ declare module 'vscode' {
 		readonly document: NotebookDocument;
 
 		/**
-		 * The primary selected cell on this notebook editor.
+		 * @deprecated
 		 */
 		// todo@API should not be undefined, rather a default
 		readonly selection?: NotebookCell;
@@ -1288,12 +1144,11 @@ declare module 'vscode' {
 		 * The column in which this editor shows.
 		 */
 		// @jrieken
-		// todo@API maybe never undefined because notebooks always show in the editor area (unlike text editors)
-		// maybe for notebook diff editor
+		// this is not implemented...
 		readonly viewColumn?: ViewColumn;
 
 		/**
-		 * Fired when the panel is disposed.
+		 * @deprecated
 		 */
 		// @rebornix REMOVE/REplace NotebookCommunication
 		// todo@API fishy? notebooks are public objects, there should be a "global" events for this
@@ -1346,9 +1201,7 @@ declare module 'vscode' {
 
 	export interface NotebookEditorSelectionChangeEvent {
 		readonly notebookEditor: NotebookEditor;
-		// @rebornix
-		// todo@API show NotebookCellRange[] instead
-		readonly selection?: NotebookCell;
+		readonly selections: ReadonlyArray<NotebookCellRange>
 	}
 
 	export interface NotebookEditorVisibleRangesChangeEvent {
@@ -1356,23 +1209,23 @@ declare module 'vscode' {
 		readonly visibleRanges: ReadonlyArray<NotebookCellRange>;
 	}
 
-	// todo@API make class
 	// todo@API support ids https://github.com/jupyter/enhancement-proposals/blob/master/62-cell-id/cell-id.md
-	export interface NotebookCellData {
-		readonly cellKind: NotebookCellKind;
-		readonly source: string;
-		readonly language: string;
-		// todo@API maybe use a separate data type?
-		readonly outputs: NotebookCellOutput[];
-		readonly metadata: NotebookCellMetadata | undefined;
+	export class NotebookCellData {
+		kind: NotebookCellKind;
+		// todo@API better names: value? text?
+		source: string;
+		// todo@API how does language and MD relate?
+		language: string;
+		outputs?: NotebookCellOutput[];
+		metadata?: NotebookCellMetadata;
+		constructor(kind: NotebookCellKind, source: string, language: string, outputs?: NotebookCellOutput[], metadata?: NotebookCellMetadata)
 	}
 
-	// todo@API make class
-	export interface NotebookData {
-		readonly cells: NotebookCellData[];
-		readonly metadata: NotebookDocumentMetadata;
+	export class NotebookData {
+		cells: NotebookCellData[];
+		metadata: NotebookDocumentMetadata;
+		constructor(cells: NotebookCellData[], metadata?: NotebookDocumentMetadata);
 	}
-
 
 	/**
 	 * Communication object passed to the {@link NotebookContentProvider} and
@@ -1421,13 +1274,11 @@ declare module 'vscode' {
 
 	export namespace notebook {
 
-		// todo@API should we really support to pass the viewType? We do NOT support
-		// to open the same file with different viewTypes at the same time
-		export function openNotebookDocument(uri: Uri, viewType?: string): Thenable<NotebookDocument>;
+		export function openNotebookDocument(uri: Uri): Thenable<NotebookDocument>;
+
 		export const onDidOpenNotebookDocument: Event<NotebookDocument>;
 		export const onDidCloseNotebookDocument: Event<NotebookDocument>;
 
-		// todo@API really needed?
 		export const onDidSaveNotebookDocument: Event<NotebookDocument>;
 
 		/**
@@ -1438,9 +1289,6 @@ declare module 'vscode' {
 		export const onDidChangeNotebookCells: Event<NotebookCellsChangeEvent>;
 		export const onDidChangeCellOutputs: Event<NotebookCellOutputsChangeEvent>;
 
-		// todo@API we send document close and open events when the language of a document changes and
-		// I believe we should stick that for cells as well
-		export const onDidChangeCellLanguage: Event<NotebookCellLanguageChangeEvent>;
 		export const onDidChangeCellMetadata: Event<NotebookCellMetadataChangeEvent>;
 	}
 
@@ -1451,7 +1299,8 @@ declare module 'vscode' {
 		export const onDidChangeActiveNotebookEditor: Event<NotebookEditor | undefined>;
 		export const onDidChangeNotebookEditorSelection: Event<NotebookEditorSelectionChangeEvent>;
 		export const onDidChangeNotebookEditorVisibleRanges: Event<NotebookEditorVisibleRangesChangeEvent>;
-		// TODO@API add overload for just a URI
+
+		export function showNotebookDocument(uri: Uri, options?: NotebookDocumentShowOptions): Thenable<NotebookEditor>;
 		export function showNotebookDocument(document: NotebookDocument, options?: NotebookDocumentShowOptions): Thenable<NotebookEditor>;
 	}
 
@@ -1461,6 +1310,8 @@ declare module 'vscode' {
 
 	// code specific mime types
 	// application/x.notebook.error-traceback
+	// application/x.notebook.stdout
+	// application/x.notebook.stderr
 	// application/x.notebook.stream
 	export class NotebookCellOutputItem {
 
@@ -1477,6 +1328,7 @@ declare module 'vscode' {
 	}
 
 	// @jrieken
+	// todo@API think about readonly...
 	//TODO@API add execution count to cell output?
 	export class NotebookCellOutput {
 		readonly id: string;
@@ -1557,29 +1409,34 @@ declare module 'vscode' {
 
 	interface NotebookDocumentOpenContext {
 		readonly backupId?: string;
+		readonly untitledDocumentData?: Uint8Array;
 	}
 
+	// todo@API use openNotebookDOCUMENT to align with openCustomDocument etc?
+	// todo@API rename to NotebookDocumentContentProvider
 	export interface NotebookContentProvider {
+
 		readonly options?: NotebookDocumentContentOptions;
 		readonly onDidChangeNotebookContentOptions?: Event<NotebookDocumentContentOptions>;
+
+		// todo@API remove! against separation of data provider and renderer
+		/**
+		 * @deprecated
+		 */
+		// eslint-disable-next-line vscode-dts-cancellation
+		resolveNotebook(document: NotebookDocument, webview: NotebookCommunication): Thenable<void>;
+
 		/**
 		 * Content providers should always use [file system providers](#FileSystemProvider) to
 		 * resolve the raw content for `uri` as the resouce is not necessarily a file on disk.
 		 */
-		// eslint-disable-next-line vscode-dts-provider-naming
-		openNotebook(uri: Uri, openContext: NotebookDocumentOpenContext): NotebookData | Thenable<NotebookData>;
-		// eslint-disable-next-line vscode-dts-provider-naming
-		// eslint-disable-next-line vscode-dts-cancellation
-		resolveNotebook(document: NotebookDocument, webview: NotebookCommunication): Thenable<void>;
-		// eslint-disable-next-line vscode-dts-provider-naming
-		saveNotebook(document: NotebookDocument, cancellation: CancellationToken): Thenable<void>;
-		// eslint-disable-next-line vscode-dts-provider-naming
-		saveNotebookAs(targetResource: Uri, document: NotebookDocument, cancellation: CancellationToken): Thenable<void>;
-		// eslint-disable-next-line vscode-dts-provider-naming
-		backupNotebook(document: NotebookDocument, context: NotebookDocumentBackupContext, cancellation: CancellationToken): Thenable<NotebookDocumentBackup>;
+		openNotebook(uri: Uri, openContext: NotebookDocumentOpenContext, token: CancellationToken): NotebookData | Thenable<NotebookData>;
 
-		// ???
-		// provideKernels(document: NotebookDocument, token: CancellationToken): ProviderResult<T[]>;
+		saveNotebook(document: NotebookDocument, token: CancellationToken): Thenable<void>;
+
+		saveNotebookAs(targetResource: Uri, document: NotebookDocument, token: CancellationToken): Thenable<void>;
+
+		backupNotebook(document: NotebookDocument, context: NotebookDocumentBackupContext, token: CancellationToken): Thenable<NotebookDocumentBackup>;
 	}
 
 	export namespace notebook {
@@ -2106,11 +1963,6 @@ declare module 'vscode' {
 
 	export interface ExtensionContext {
 		readonly extensionRuntime: ExtensionRuntime;
-
-		/**
-		 * Indicates that this is a fresh install of VS Code.
-		 */
-		readonly isNewInstall: boolean;
 	}
 
 	//#endregion
@@ -2118,8 +1970,7 @@ declare module 'vscode' {
 	//#region https://github.com/microsoft/vscode/issues/116906
 
 	export interface ExtensionContext {
-		readonly extensionId: string;
-		readonly extensionVersion: string;
+		readonly extension: Extension<any>;
 	}
 
 	//#endregion
@@ -2724,16 +2575,8 @@ declare module 'vscode' {
 		readonly allowContributedOpeners?: boolean | string;
 	}
 
-	//#endregion
-
-	//#region https://github.com/microsoft/vscode/issues/110267
-
 	namespace env {
 		export function openExternal(target: Uri, options?: OpenExternalOptions): Thenable<boolean>;
-
-		export const isTelemetryEnabled: boolean;
-
-		export const onDidChangeTelemetryEnabled: Event<boolean>;
 	}
 
 	//#endregion
@@ -2848,6 +2691,39 @@ declare module 'vscode' {
 		 * The reason why code actions were requested.
 		 */
 		readonly triggerKind: CodeActionTriggerKind;
+	}
+	//#endregion
+
+	//#region https://github.com/microsoft/vscode/issues/115616 @alexr00
+	export enum PortAutoForwardAction {
+		Notify = 1,
+		OpenBrowser = 2,
+		OpenPreview = 3,
+		Silent = 4,
+		Ignore = 5
+	}
+
+	export interface PortAttributes {
+		port: number;
+		autoForwardAction: PortAutoForwardAction
+	}
+
+	export interface PortAttributesProvider {
+		providePortAttributes(ports: number[], pid: number | undefined, commandLine: string | undefined, token: CancellationToken): ProviderResult<PortAttributes[]>;
+	}
+
+	export namespace workspace {
+		/**
+		 * If your extension listens on ports, consider registering a PortAttributesProvider to provide information
+		 * about the ports. For example, a debug extension may know about debug ports in it's debuggee. By providing
+		 * this information with a PortAttributesProvider the extension can tell VS Code that these ports should be
+		 * ignored, since they don't need to be user facing.
+		 *
+		 * @param portSelector If registerPortAttributesProvider is called after you start your process then you may already
+		 * know the range of ports or the pid of your process.
+		 * @param provider The PortAttributesProvider
+		 */
+		export function registerPortAttributesProvider(portSelector: { pid?: number, portRange?: [number, number] }, provider: PortAttributesProvider): Disposable;
 	}
 	//#endregion
 }

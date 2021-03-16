@@ -3,8 +3,8 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { VSBuffer } from 'vs/base/common/buffer';
 import { memoize } from 'vs/base/common/decorators';
-import { Lazy } from 'vs/base/common/lazy';
 import { IReference } from 'vs/base/common/lifecycle';
 import { Schemas } from 'vs/base/common/network';
 import { basename } from 'vs/base/common/path';
@@ -18,7 +18,7 @@ import { IUndoRedoService } from 'vs/platform/undoRedo/common/undoRedo';
 import { GroupIdentifier, IEditorInput, IRevertOptions, ISaveOptions, Verbosity } from 'vs/workbench/common/editor';
 import { ICustomEditorModel, ICustomEditorService } from 'vs/workbench/contrib/customEditor/common/customEditor';
 import { decorateFileEditorLabel } from 'vs/workbench/contrib/files/common/editors/fileEditorInput';
-import { IWebviewService, WebviewOverlay } from 'vs/workbench/contrib/webview/browser/webview';
+import { WebviewOverlay } from 'vs/workbench/contrib/webview/browser/webview';
 import { IWebviewWorkbenchService, LazilyResolvedWebviewEditorInput } from 'vs/workbench/contrib/webviewPanel/browser/webviewWorkbenchService';
 import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
 
@@ -31,6 +31,8 @@ export class CustomEditorInput extends LazilyResolvedWebviewEditorInput {
 
 	private readonly _backupId: string | undefined;
 
+	private readonly _untitledDocumentData: VSBuffer | undefined;
+
 	get resource() { return this._editorResource; }
 
 	private _modelRef?: IReference<ICustomEditorModel>;
@@ -39,9 +41,8 @@ export class CustomEditorInput extends LazilyResolvedWebviewEditorInput {
 		resource: URI,
 		viewType: string,
 		id: string,
-		webview: Lazy<WebviewOverlay>,
-		options: { startsDirty?: boolean, backupId?: string },
-		@IWebviewService webviewService: IWebviewService,
+		webview: WebviewOverlay,
+		options: { startsDirty?: boolean, backupId?: string, untitledDocumentData?: VSBuffer },
 		@IWebviewWorkbenchService webviewWorkbenchService: IWebviewWorkbenchService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@ILabelService private readonly labelService: ILabelService,
@@ -50,10 +51,11 @@ export class CustomEditorInput extends LazilyResolvedWebviewEditorInput {
 		@IEditorService private readonly editorService: IEditorService,
 		@IUndoRedoService private readonly undoRedoService: IUndoRedoService,
 	) {
-		super(id, viewType, '', webview, webviewService, webviewWorkbenchService);
+		super(id, viewType, '', webview, webviewWorkbenchService);
 		this._editorResource = resource;
 		this._defaultDirtyState = options.startsDirty;
 		this._backupId = options.backupId;
+		this._untitledDocumentData = options.untitledDocumentData;
 	}
 
 	public getTypeId(): string {
@@ -213,8 +215,8 @@ export class CustomEditorInput extends LazilyResolvedWebviewEditorInput {
 			newResource,
 			this.viewType,
 			this.id,
-			new Lazy(() => undefined!),
-			{ startsDirty: this._defaultDirtyState, backupId: this._backupId }); // this webview is replaced in the transfer call
+			undefined!,  // this webview is replaced in the transfer call
+			{ startsDirty: this._defaultDirtyState, backupId: this._backupId });
 		this.transfer(newEditor);
 		newEditor.updateGroup(group);
 		return newEditor;
@@ -252,5 +254,9 @@ export class CustomEditorInput extends LazilyResolvedWebviewEditorInput {
 			return this._modelRef.object.backupId;
 		}
 		return this._backupId;
+	}
+
+	get untitledDocumentData(): VSBuffer | undefined {
+		return this._untitledDocumentData;
 	}
 }

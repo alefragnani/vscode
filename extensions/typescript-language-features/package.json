@@ -9,7 +9,9 @@
   "license": "MIT",
   "aiKey": "AIF-d9b70cd4-b9f9-4d70-929b-a071c400b217",
   "enableProposedApi": true,
-  "requiresWorkspaceTrust": "onDemand",
+  "workspaceTrust": {
+    "required": "onDemand"
+  },
   "engines": {
     "vscode": "^1.30.0"
   },
@@ -872,6 +874,7 @@
               "type": "string",
               "description": "%configuration.tsserver.watchOptions.watchFile%",
               "enum": [
+                "fixedChunkSizePolling",
                 "fixedPollingInterval",
                 "priorityPollingInterval",
                 "dynamicPriorityPolling",
@@ -879,6 +882,7 @@
                 "useFsEventsOnParentDirectory"
               ],
               "enumDescriptions": [
+                "%configuration.tsserver.watchOptions.watchFile.fixedChunkSizePolling%",
                 "%configuration.tsserver.watchOptions.watchFile.fixedPollingInterval%",
                 "%configuration.tsserver.watchOptions.watchFile.priorityPollingInterval%",
                 "%configuration.tsserver.watchOptions.watchFile.dynamicPriorityPolling%",
@@ -891,11 +895,13 @@
               "type": "string",
               "description": "%configuration.tsserver.watchOptions.watchDirectory%",
               "enum": [
+                "fixedChunkSizePolling",
                 "fixedPollingInterval",
                 "dynamicPriorityPolling",
                 "useFsEvents"
               ],
               "enumDescriptions": [
+                "%configuration.tsserver.watchOptions.watchDirectory.fixedChunkSizePolling%",
                 "%configuration.tsserver.watchOptions.watchDirectory.fixedPollingInterval%",
                 "%configuration.tsserver.watchOptions.watchDirectory.dynamicPriorityPolling%",
                 "%configuration.tsserver.watchOptions.watchDirectory.useFsEvents%"
