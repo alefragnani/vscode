@@ -7,12 +7,11 @@ import * as assert from 'assert';
 import { NOTEBOOK_DISPLAY_ORDER, sortMimeTypes, CellKind, diff, CellUri, cellRangesToIndexes, cellIndexesToRanges } from 'vs/workbench/contrib/notebook/common/notebookCommon';
 import { TestCell, setupInstantiationService } from 'vs/workbench/contrib/notebook/test/testNotebookEditor';
 import { URI } from 'vs/base/common/uri';
-import { ITextModelService } from 'vs/editor/common/services/resolverService';
-import { reduceCellRanges } from 'vs/workbench/contrib/notebook/browser/notebookBrowser';
+import { IModeService } from 'vs/editor/common/services/modeService';
 
 suite('NotebookCommon', () => {
 	const instantiationService = setupInstantiationService();
-	const textModelService = instantiationService.get(ITextModelService);
+	const modeService = instantiationService.get(IModeService);
 
 	test('sortMimeTypes default orders', function () {
 		const defaultDisplayOrder = NOTEBOOK_DISPLAY_ORDER;
@@ -209,7 +208,7 @@ suite('NotebookCommon', () => {
 
 		for (let i = 0; i < 5; i++) {
 			cells.push(
-				new TestCell('notebook', i, `var a = ${i};`, 'javascript', CellKind.Code, [], textModelService)
+				new TestCell('notebook', i, `var a = ${i};`, 'javascript', CellKind.Code, [], modeService)
 			);
 		}
 
@@ -235,8 +234,8 @@ suite('NotebookCommon', () => {
 		]
 		);
 
-		const cellA = new TestCell('notebook', 6, 'var a = 6;', 'javascript', CellKind.Code, [], textModelService);
-		const cellB = new TestCell('notebook', 7, 'var a = 7;', 'javascript', CellKind.Code, [], textModelService);
+		const cellA = new TestCell('notebook', 6, 'var a = 6;', 'javascript', CellKind.Code, [], modeService);
+		const cellB = new TestCell('notebook', 7, 'var a = 7;', 'javascript', CellKind.Code, [], modeService);
 
 		const modifiedCells = [
 			cells[0],
@@ -279,8 +278,8 @@ suite('CellUri', function () {
 		const data = CellUri.generate(nb, id);
 		const actual = CellUri.parse(data);
 		assert.ok(Boolean(actual));
-		assert.equal(actual?.handle, id);
-		assert.equal(actual?.notebook.toString(), nb.toString());
+		assert.strictEqual(actual?.handle, id);
+		assert.strictEqual(actual?.notebook.toString(), nb.toString());
 	});
 
 	test('parse, generate (foo-scheme)', function () {
@@ -291,8 +290,8 @@ suite('CellUri', function () {
 		const data = CellUri.generate(nb, id);
 		const actual = CellUri.parse(data);
 		assert.ok(Boolean(actual));
-		assert.equal(actual?.handle, id);
-		assert.equal(actual?.notebook.toString(), nb.toString());
+		assert.strictEqual(actual?.handle, id);
+		assert.strictEqual(actual?.notebook.toString(), nb.toString());
 	});
 });
 
@@ -321,12 +320,5 @@ suite('CellRange', function () {
 
 		assert.deepStrictEqual(cellIndexesToRanges([9, 10]), [{ start: 9, end: 11 }]);
 		assert.deepStrictEqual(cellIndexesToRanges([10, 9]), [{ start: 9, end: 11 }]);
-	});
-
-	test('Reduce ranges', function () {
-		assert.deepStrictEqual(reduceCellRanges([{ start: 0, end: 1 }, { start: 1, end: 2 }]), [{ start: 0, end: 2 }]);
-		assert.deepStrictEqual(reduceCellRanges([{ start: 0, end: 2 }, { start: 1, end: 3 }]), [{ start: 0, end: 3 }]);
-		assert.deepStrictEqual(reduceCellRanges([{ start: 1, end: 3 }, { start: 0, end: 2 }]), [{ start: 0, end: 3 }]);
-		assert.deepStrictEqual(reduceCellRanges([{ start: 0, end: 2 }, { start: 4, end: 5 }]), [{ start: 0, end: 2 }, { start: 4, end: 5 }]);
 	});
 });

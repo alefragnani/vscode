@@ -22,7 +22,7 @@ import { IKeybindingService } from 'vs/platform/keybinding/common/keybinding';
 import { CancellationToken } from 'vs/base/common/cancellation';
 import { isNonEmptyArray } from 'vs/base/common/arrays';
 import { IColorMapping } from 'vs/platform/theme/common/styler';
-import { Renderer, Delegate } from 'vs/workbench/contrib/extensions/browser/extensionsList';
+import { Delegate, Renderer } from 'vs/workbench/contrib/extensions/browser/extensionsList';
 import { listFocusForeground, listFocusBackground } from 'vs/platform/theme/common/colorRegistry';
 import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
 import { StandardMouseEvent } from 'vs/base/browser/mouseEvent';
@@ -226,7 +226,7 @@ class OpenExtensionAction extends Action {
 		this._extension = extension;
 	}
 
-	run(sideByside: boolean): Promise<any> {
+	override run(sideByside: boolean): Promise<any> {
 		if (this._extension) {
 			return this.extensionsWorkdbenchService.open(this._extension, { sideByside });
 		}

@@ -95,6 +95,8 @@ export abstract class AbstractExtHostExtensionService extends Disposable impleme
 	private readonly _almostReadyToRunExtensions: Barrier;
 	private readonly _readyToStartExtensionHost: Barrier;
 	private readonly _readyToRunExtensions: Barrier;
+	private readonly _eagerExtensionsActivated: Barrier;
+
 	protected readonly _registry: ExtensionDescriptionRegistry;
 	private readonly _storage: ExtHostStorage;
 	private readonly _secretState: ExtHostSecretState;
@@ -140,6 +142,7 @@ export abstract class AbstractExtHostExtensionService extends Disposable impleme
 		this._almostReadyToRunExtensions = new Barrier();
 		this._readyToStartExtensionHost = new Barrier();
 		this._readyToRunExtensions = new Barrier();
+		this._eagerExtensionsActivated = new Barrier();
 		this._registry = new ExtensionDescriptionRegistry(this._initData.extensions);
 		this._storage = new ExtHostStorage(this._extHostContext);
 		this._secretState = new ExtHostSecretState(this._extHostContext);
@@ -416,9 +419,8 @@ export abstract class AbstractExtHostExtensionService extends Disposable impleme
 				get globalStorageUri() { return that._storagePath.globalValue(extensionDescription); },
 				get extensionMode() { return extensionMode; },
 				get extension() {
-					checkProposedApiEnabled(extensionDescription);
 					if (extension === undefined) {
-						extension = new Extension(this, extensionDescription.identifier, extensionDescription, extensionKind);
+						extension = new Extension(that, extensionDescription.identifier, extensionDescription, extensionKind);
 					}
 					return extension;
 				},
@@ -548,7 +550,7 @@ export abstract class AbstractExtHostExtensionService extends Disposable impleme
 	}
 
 	public async $extensionTestsExecute(): Promise<number> {
-		await this._readyToRunExtensions.wait();
+		await this._eagerExtensionsActivated.wait();
 		try {
 			return this._doHandleExtensionTests();
 		} catch (error) {
@@ -566,7 +568,7 @@ export abstract class AbstractExtHostExtensionService extends Disposable impleme
 		const extensionTestsPath = originalFSPath(extensionTestsLocationURI);
 
 		// Require the test runner via node require from the provided path
-		const testRunner: ITestRunner | INewTestRunner | undefined = await this._loadCommonJSModule(null, URI.file(extensionTestsPath), new ExtensionActivationTimesBuilder(false));
+		const testRunner: ITestRunner | INewTestRunner | undefined = await this._loadCommonJSModule(null, extensionTestsLocationURI, new ExtensionActivationTimesBuilder(false));
 
 		if (!testRunner || typeof testRunner.run !== 'function') {
 			throw new Error(nls.localize('extensionTestError', "Path {0} does not point to a valid extension test runner.", extensionTestsPath));
@@ -614,6 +616,7 @@ export abstract class AbstractExtHostExtensionService extends Disposable impleme
 			.then(() => this._readyToRunExtensions.open())
 			.then(() => this._handleEagerExtensions())
 			.then(() => {
+				this._eagerExtensionsActivated.open();
 				this._logService.info(`eager extensions activated`);
 			});
 	}

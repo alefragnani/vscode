@@ -114,17 +114,17 @@ const apiMenus: IAPIMenu[] = [
 	{
 		key: 'scm/resourceState/context',
 		id: MenuId.SCMResourceContext,
-		description: localize('menus.resourceGroupContext', "The Source Control resource group context menu")
+		description: localize('menus.resourceStateContext', "The Source Control resource state context menu")
 	},
 	{
 		key: 'scm/resourceFolder/context',
 		id: MenuId.SCMResourceFolderContext,
-		description: localize('menus.resourceStateContext', "The Source Control resource state context menu")
+		description: localize('menus.resourceFolderContext', "The Source Control resource folder context menu")
 	},
 	{
 		key: 'scm/resourceGroup/context',
 		id: MenuId.SCMResourceGroupContext,
-		description: localize('menus.resourceFolderContext', "The Source Control resource folder context menu")
+		description: localize('menus.resourceGroupContext', "The Source Control resource group context menu")
 	},
 	{
 		key: 'scm/change/title',
@@ -171,6 +171,12 @@ const apiMenus: IAPIMenu[] = [
 		supportsSubmenus: false
 	},
 	{
+		key: 'notebook/toolbar',
+		id: MenuId.NotebookToolbar,
+		description: localize('notebook.toolbar', "The contributed notebook toolbar menu"),
+		proposed: true
+	},
+	{
 		key: 'notebook/cell/title',
 		id: MenuId.NotebookCellTitle,
 		description: localize('notebook.cell.title', "The contributed notebook cell title menu"),
@@ -206,6 +212,11 @@ const apiMenus: IAPIMenu[] = [
 		key: 'ports/item/origin/inline',
 		id: MenuId.TunnelOriginInline,
 		description: localize('view.tunnelOriginInline', "The Ports view item origin inline menu")
+	},
+	{
+		key: 'ports/item/port/inline',
+		id: MenuId.TunnelPortInline,
+		description: localize('view.tunnelPortInline', "The Ports view item port inline menu")
 	}
 ];
 
