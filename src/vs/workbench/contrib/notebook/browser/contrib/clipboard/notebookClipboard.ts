@@ -14,7 +14,8 @@ import { CopyAction, CutAction, PasteAction } from 'vs/editor/contrib/clipboard/
 import { IClipboardService } from 'vs/platform/clipboard/common/clipboardService';
 import { CellViewModel, NotebookViewModel } from 'vs/workbench/contrib/notebook/browser/viewModel/notebookViewModel';
 import { cloneNotebookCellTextModel, NotebookCellTextModel } from 'vs/workbench/contrib/notebook/common/model/notebookCellTextModel';
-import { CellEditType, ICellEditOperation, ICellRange, ISelectionState, SelectionStateType } from 'vs/workbench/contrib/notebook/common/notebookCommon';
+import { CellEditType, ICellEditOperation, ISelectionState, SelectionStateType } from 'vs/workbench/contrib/notebook/common/notebookCommon';
+import { ICellRange } from 'vs/workbench/contrib/notebook/common/notebookRange';
 import { INotebookService } from 'vs/workbench/contrib/notebook/common/notebookService';
 import * as platform from 'vs/base/common/platform';
 import { MenuId, registerAction2 } from 'vs/platform/actions/common/actions';
@@ -80,7 +81,7 @@ export function runPasteCells(editor: INotebookEditor, activeCell: ICellViewMode
 }): boolean {
 	const viewModel = editor.viewModel;
 
-	if (!viewModel || !viewModel.metadata.editable) {
+	if (!viewModel || viewModel.options.isReadOnly) {
 		return false;
 	}
 
@@ -176,7 +177,7 @@ export function runCopyCells(accessor: ServicesAccessor, editor: INotebookEditor
 export function runCutCells(accessor: ServicesAccessor, editor: INotebookEditor, targetCell: ICellViewModel | undefined): boolean {
 	const viewModel = editor.viewModel;
 
-	if (!viewModel || !viewModel.metadata.editable) {
+	if (!viewModel || viewModel.options.isReadOnly) {
 		return false;
 	}
 
@@ -425,7 +426,7 @@ registerAction2(class extends NotebookAction {
 
 		const viewModel = context.notebookEditor.viewModel;
 
-		if (!viewModel || !viewModel.metadata.editable) {
+		if (!viewModel || viewModel.options.isReadOnly) {
 			return;
 		}
 
@@ -457,7 +458,7 @@ registerAction2(class extends NotebookCellAction {
 
 		const viewModel = context.notebookEditor.viewModel;
 
-		if (!viewModel || !viewModel.metadata.editable) {
+		if (!viewModel || viewModel.options.isReadOnly) {
 			return;
 		}
 

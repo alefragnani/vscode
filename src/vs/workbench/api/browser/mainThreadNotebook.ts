@@ -3,19 +3,17 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { flatten } from 'vs/base/common/arrays';
 import { VSBuffer } from 'vs/base/common/buffer';
 import { CancellationToken } from 'vs/base/common/cancellation';
 import { Emitter } from 'vs/base/common/event';
 import { IRelativePattern } from 'vs/base/common/glob';
 import { DisposableStore, dispose, IDisposable } from 'vs/base/common/lifecycle';
-import { URI, UriComponents } from 'vs/base/common/uri';
-import { ILogService } from 'vs/platform/log/common/log';
+import { URI } from 'vs/base/common/uri';
 import { extHostNamedCustomer } from 'vs/workbench/api/common/extHostCustomers';
-import { INotebookEditorService } from 'vs/workbench/contrib/notebook/browser/notebookEditorService';
 import { INotebookCellStatusBarService } from 'vs/workbench/contrib/notebook/common/notebookCellStatusBarService';
-import { ICellRange, INotebookCellStatusBarItemProvider, INotebookDocumentFilter, INotebookExclusiveDocumentFilter, INotebookKernel, NotebookDataDto, TransientMetadata, TransientOptions } from 'vs/workbench/contrib/notebook/common/notebookCommon';
-import { IMainNotebookController, INotebookService } from 'vs/workbench/contrib/notebook/common/notebookService';
+import { NotebookSelector } from 'vs/workbench/contrib/notebook/common/notebookSelector';
+import { INotebookCellStatusBarItemProvider, INotebookExclusiveDocumentFilter, NotebookDataDto, TransientCellMetadata, TransientDocumentMetadata, TransientOptions } from 'vs/workbench/contrib/notebook/common/notebookCommon';
+import { INotebookContentProvider, INotebookService } from 'vs/workbench/contrib/notebook/common/notebookService';
 import { ExtHostContext, ExtHostNotebookShape, IExtHostContext, MainContext, MainThreadNotebookShape, NotebookExtensionDescription } from '../common/extHost.protocol';
 
 @extHostNamedCustomer(MainContext.MainThreadNotebook)
@@ -24,58 +22,42 @@ export class MainThreadNotebooks implements MainThreadNotebookShape {
 	private readonly _disposables = new DisposableStore();
 
 	private readonly _proxy: ExtHostNotebookShape;
-	private readonly _notebookProviders = new Map<string, { controller: IMainNotebookController, disposable: IDisposable }>();
+	private readonly _notebookProviders = new Map<string, { controller: INotebookContentProvider, disposable: IDisposable }>();
 	private readonly _notebookSerializer = new Map<number, IDisposable>();
-	private readonly _notebookKernelProviders = new Map<number, { extension: NotebookExtensionDescription, emitter: Emitter<URI | undefined>, provider: IDisposable }>();
 	private readonly _notebookCellStatusBarRegistrations = new Map<number, IDisposable>();
 
 	constructor(
 		extHostContext: IExtHostContext,
 		@INotebookService private readonly _notebookService: INotebookService,
-		@INotebookEditorService private readonly _notebookEditorService: INotebookEditorService,
-		@ILogService private readonly _logService: ILogService,
 		@INotebookCellStatusBarService private readonly _cellStatusBarService: INotebookCellStatusBarService,
 	) {
 		this._proxy = extHostContext.getProxy(ExtHostContext.ExtHostNotebook);
-		this._registerListeners();
 	}
 
 	dispose(): void {
 		this._disposables.dispose();
-
 		// remove all notebook providers
 		for (const item of this._notebookProviders.values()) {
 			item.disposable.dispose();
 		}
-
-		// remove all kernel providers
-		for (const item of this._notebookKernelProviders.values()) {
-			item.emitter.dispose();
-			item.provider.dispose();
-		}
 		dispose(this._notebookSerializer.values());
-	}
-
-
-	private _registerListeners(): void {
-		this._disposables.add(this._notebookService.onDidChangeNotebookActiveKernel(e => {
-			this._proxy.$acceptNotebookActiveKernelChange(e);
-		}));
 	}
 
 	async $registerNotebookProvider(extension: NotebookExtensionDescription, viewType: string, options: {
 		transientOutputs: boolean;
-		transientMetadata: TransientMetadata;
+		transientCellMetadata: TransientCellMetadata;
+		transientDocumentMetadata: TransientDocumentMetadata;
 		viewOptions?: { displayName: string; filenamePattern: (string | IRelativePattern | INotebookExclusiveDocumentFilter)[]; exclusive: boolean; };
 	}): Promise<void> {
-		let contentOptions = { transientOutputs: options.transientOutputs, transientMetadata: options.transientMetadata };
+		let contentOptions = { transientOutputs: options.transientOutputs, transientCellMetadata: options.transientCellMetadata, transientDocumentMetadata: options.transientDocumentMetadata };
 
-		const controller: IMainNotebookController = {
+		const controller: INotebookContentProvider = {
 			get options() {
 				return contentOptions;
 			},
 			set options(newOptions) {
-				contentOptions.transientMetadata = newOptions.transientMetadata;
+				contentOptions.transientCellMetadata = newOptions.transientCellMetadata;
+				contentOptions.transientDocumentMetadata = newOptions.transientDocumentMetadata;
 				contentOptions.transientOutputs = newOptions.transientOutputs;
 			},
 			viewOptions: options.viewOptions,
@@ -85,12 +67,6 @@ export class MainThreadNotebooks implements MainThreadNotebookShape {
 					data,
 					transientOptions: contentOptions
 				};
-			},
-			resolveNotebookEditor: async (viewType: string, uri: URI, editorId: string) => {
-				await this._proxy.$resolveNotebookEditor(viewType, uri, editorId);
-			},
-			onDidReceiveMessage: (editorId: string, rendererType: string | undefined, message: unknown) => {
-				this._proxy.$onDidReceiveMessage(editorId, rendererType, message);
 			},
 			save: async (uri: URI, token: CancellationToken) => {
 				return this._proxy.$saveNotebook(viewType, uri, token);
@@ -107,7 +83,7 @@ export class MainThreadNotebooks implements MainThreadNotebookShape {
 		this._notebookProviders.set(viewType, { controller, disposable });
 	}
 
-	async $updateNotebookProviderOptions(viewType: string, options?: { transientOutputs: boolean; transientMetadata: TransientMetadata; }): Promise<void> {
+	async $updateNotebookProviderOptions(viewType: string, options?: { transientOutputs: boolean; transientCellMetadata: TransientCellMetadata; transientDocumentMetadata: TransientDocumentMetadata; }): Promise<void> {
 		const provider = this._notebookProviders.get(viewType);
 
 		if (provider && options) {
@@ -132,10 +108,10 @@ export class MainThreadNotebooks implements MainThreadNotebookShape {
 		const registration = this._notebookService.registerNotebookSerializer(viewType, extension, {
 			options,
 			dataToNotebook: (data: VSBuffer): Promise<NotebookDataDto> => {
-				return this._proxy.$dataToNotebook(handle, data);
+				return this._proxy.$dataToNotebook(handle, data, CancellationToken.None);
 			},
 			notebookToData: (data: NotebookDataDto): Promise<VSBuffer> => {
-				return this._proxy.$notebookToData(handle, data);
+				return this._proxy.$notebookToData(handle, data, CancellationToken.None);
 			}
 		});
 		this._notebookSerializer.set(handle, registration);
@@ -146,55 +122,6 @@ export class MainThreadNotebooks implements MainThreadNotebookShape {
 		this._notebookSerializer.delete(handle);
 	}
 
-	async $registerNotebookKernelProvider(extension: NotebookExtensionDescription, handle: number, documentFilter: INotebookDocumentFilter): Promise<void> {
-		const emitter = new Emitter<URI | undefined>();
-		const that = this;
-
-		const provider = this._notebookService.registerNotebookKernelProvider({
-			providerExtensionId: extension.id.value,
-			providerDescription: extension.description,
-			onDidChangeKernels: emitter.event,
-			selector: documentFilter,
-			provideKernels: async (uri: URI, token: CancellationToken): Promise<INotebookKernel[]> => {
-				const result: INotebookKernel[] = [];
-				const kernelsDto = await that._proxy.$provideNotebookKernels(handle, uri, token);
-				for (const dto of kernelsDto) {
-					result.push({
-						id: dto.id,
-						friendlyId: dto.friendlyId,
-						label: dto.label,
-						extension: dto.extension,
-						localResourceRoot: URI.revive(dto.extensionLocation),
-						providerHandle: dto.providerHandle,
-						description: dto.description,
-						detail: dto.detail,
-						isPreferred: dto.isPreferred,
-						preloadProvides: flatten(dto.preloads?.map(p => p.provides) ?? []),
-						preloadUris: dto.preloads?.map(u => URI.revive(u.uri)) ?? [],
-						supportedLanguages: dto.supportedLanguages,
-						implementsInterrupt: dto.implementsInterrupt,
-						implementsExecutionOrder: true, // todo@jrieken this is temporary and for the OLD API only
-						resolve: (uri: URI, editorId: string, token: CancellationToken): Promise<void> => {
-							this._logService.debug('MainthreadNotebooks.resolveNotebookKernel', uri.path, dto.friendlyId);
-							return this._proxy.$resolveNotebookKernel(handle, editorId, uri, dto.friendlyId, token);
-						},
-						executeNotebookCellsRequest: (uri: URI, cellRanges: ICellRange[]): Promise<void> => {
-							this._logService.debug('MainthreadNotebooks.executeNotebookCell', uri.path, dto.friendlyId, cellRanges);
-							return this._proxy.$executeNotebookKernelFromProvider(handle, uri, dto.friendlyId, cellRanges);
-						},
-						cancelNotebookCellExecution: (uri: URI, cellRanges: ICellRange[]): Promise<void> => {
-							this._logService.debug('MainthreadNotebooks.cancelNotebookCellExecution', uri.path, dto.friendlyId, cellRanges);
-							return this._proxy.$cancelNotebookCellExecution(handle, uri, dto.friendlyId, cellRanges);
-						}
-					});
-				}
-				return result;
-			}
-		});
-		this._notebookKernelProviders.set(handle, { extension, emitter, provider });
-		return;
-	}
-
 	$emitCellStatusBarEvent(eventHandle: number): void {
 		const emitter = this._notebookCellStatusBarRegistrations.get(eventHandle);
 		if (emitter instanceof Emitter) {
@@ -202,7 +129,7 @@ export class MainThreadNotebooks implements MainThreadNotebookShape {
 		}
 	}
 
-	async $registerNotebookCellStatusBarItemProvider(handle: number, eventHandle: number | undefined, documentFilter: INotebookDocumentFilter): Promise<void> {
+	async $registerNotebookCellStatusBarItemProvider(handle: number, eventHandle: number | undefined, selector: NotebookSelector): Promise<void> {
 		const that = this;
 		const provider: INotebookCellStatusBarItemProvider = {
 			async provideCellStatusBarItems(uri: URI, index: number, token: CancellationToken) {
@@ -216,7 +143,7 @@ export class MainThreadNotebooks implements MainThreadNotebookShape {
 					}
 				};
 			},
-			selector: documentFilter
+			selector: selector
 		};
 
 		if (typeof eventHandle === 'number') {
@@ -241,30 +168,5 @@ export class MainThreadNotebooks implements MainThreadNotebookShape {
 		if (typeof eventHandle === 'number') {
 			unregisterThing(eventHandle);
 		}
-	}
-
-	async $unregisterNotebookKernelProvider(handle: number): Promise<void> {
-		const entry = this._notebookKernelProviders.get(handle);
-
-		if (entry) {
-			entry.emitter.dispose();
-			entry.provider.dispose();
-			this._notebookKernelProviders.delete(handle);
-		}
-	}
-
-	$onNotebookKernelChange(handle: number, uriComponents: UriComponents): void {
-		const entry = this._notebookKernelProviders.get(handle);
-
-		entry?.emitter.fire(uriComponents ? URI.revive(uriComponents) : undefined);
-	}
-
-	async $postMessage(id: string, forRendererId: string | undefined, value: any): Promise<boolean> {
-		const editor = this._notebookEditorService.getNotebookEditor(id);
-		if (!editor) {
-			return false;
-		}
-		editor.postMessage(forRendererId, value);
-		return true;
 	}
 }

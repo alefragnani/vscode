@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Emitter, Event } from 'vs/base/common/event';
-import { ICell, NotebookCellOutputsSplice, CellKind, NotebookCellMetadata, NotebookDocumentMetadata, TransientOptions, IOutputDto, ICellOutput, CellMetadataChangedEvent } from 'vs/workbench/contrib/notebook/common/notebookCommon';
+import { ICell, NotebookCellOutputsSplice, CellKind, NotebookCellMetadata, TransientOptions, IOutputDto, ICellOutput, CellMetadataChangedEvent } from 'vs/workbench/contrib/notebook/common/notebookCommon';
 import { PieceTreeTextBufferBuilder } from 'vs/editor/common/model/pieceTreeTextBuffer/pieceTreeTextBufferBuilder';
 import { URI } from 'vs/base/common/uri';
 import * as UUID from 'vs/base/common/uuid';
@@ -15,6 +15,7 @@ import { hash } from 'vs/base/common/hash';
 import { PieceTreeTextBuffer } from 'vs/editor/common/model/pieceTreeTextBuffer/pieceTreeTextBuffer';
 import { NotebookCellOutputTextModel } from 'vs/workbench/contrib/notebook/common/model/notebookCellOutputTextModel';
 import { IModeService } from 'vs/editor/common/services/modeService';
+import { TextModel } from 'vs/editor/common/model/textModel';
 
 export class NotebookCellTextModel extends Disposable implements ICell {
 	private _onDidChangeOutputs = new Emitter<NotebookCellOutputsSplice[]>();
@@ -88,7 +89,9 @@ export class NotebookCellTextModel extends Disposable implements ICell {
 
 		this._register(this._textBuffer.onDidChangeContent(() => {
 			this._hash = null;
-			this._onDidChangeContent.fire();
+			if (!this._textModel) {
+				this._onDidChangeContent.fire();
+			}
 		}));
 
 		return this._textBuffer;
@@ -96,13 +99,19 @@ export class NotebookCellTextModel extends Disposable implements ICell {
 
 	private _hash: number | null = null;
 
+	private _versionId: number = 1;
+	private _alternativeId: number = 1;
+	get alternativeId(): number {
+		return this._alternativeId;
+	}
+
 	private _textModelDisposables = new DisposableStore();
-	private _textModel: model.ITextModel | undefined = undefined;
-	get textModel(): model.ITextModel | undefined {
+	private _textModel: TextModel | undefined = undefined;
+	get textModel(): TextModel | undefined {
 		return this._textModel;
 	}
 
-	set textModel(m: model.ITextModel | undefined) {
+	set textModel(m: TextModel | undefined) {
 		if (this._textModel === m) {
 			return;
 		}
@@ -118,6 +127,16 @@ export class NotebookCellTextModel extends Disposable implements ICell {
 				this.language = e.newLanguage;
 			}));
 			this._textModelDisposables.add(this._textModel.onWillDispose(() => this.textModel = undefined));
+			this._textModelDisposables.add(this._textModel.onDidChangeContent(() => {
+				if (this._textModel) {
+					this._versionId = this._textModel.getVersionId();
+					this._alternativeId = this._textModel.getAlternativeVersionId();
+				}
+				this._onDidChangeContent.fire();
+			}));
+
+			this._textModel._overwriteVersionId(this._versionId);
+			this._textModel._overwriteAlternativeVersionId(this._versionId);
 		}
 	}
 
@@ -159,11 +178,11 @@ export class NotebookCellTextModel extends Disposable implements ICell {
 
 	private _getPersisentMetadata() {
 		let filteredMetadata: { [key: string]: any } = {};
-		const transientMetadata = this.transientOptions.transientMetadata;
+		const transientCellMetadata = this.transientOptions.transientCellMetadata;
 
 		const keys = new Set([...Object.keys(this.metadata)]);
 		for (let key of keys) {
-			if (!(transientMetadata[key as keyof NotebookCellMetadata])
+			if (!(transientCellMetadata[key as keyof NotebookCellMetadata])
 			) {
 				filteredMetadata[key] = this.metadata[key as keyof NotebookCellMetadata];
 			}
@@ -189,19 +208,6 @@ export class NotebookCellTextModel extends Disposable implements ICell {
 			this._onDidChangeOutputs.fire(splices);
 		}
 	}
-
-	getEvaluatedMetadata(documentMetadata: NotebookDocumentMetadata): NotebookCellMetadata {
-		const editable = this.metadata?.editable ??
-			documentMetadata.cellEditable;
-
-		return {
-			...(this.metadata || {}),
-			...{
-				editable,
-			}
-		};
-	}
-
 	override dispose() {
 		// Manually release reference to previous text buffer to avoid large leaks
 		// in case someone leaks a CellTextModel reference
@@ -214,11 +220,7 @@ export class NotebookCellTextModel extends Disposable implements ICell {
 
 export function cloneMetadata(cell: NotebookCellTextModel) {
 	return {
-		editable: cell.metadata?.editable,
-		breakpointMargin: cell.metadata?.breakpointMargin,
-		inputCollapsed: cell.metadata?.inputCollapsed,
-		outputCollapsed: cell.metadata?.outputCollapsed,
-		custom: cell.metadata?.custom
+		...cell.metadata
 	};
 }
 

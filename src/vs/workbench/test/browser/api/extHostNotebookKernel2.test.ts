@@ -11,6 +11,7 @@ import { mock } from 'vs/workbench/test/common/workbenchTestServices';
 import { INotebookKernelDto2, MainContext, MainThreadCommandsShape, MainThreadNotebookKernelsShape } from 'vs/workbench/api/common/extHost.protocol';
 import { ExtHostNotebookKernels } from 'vs/workbench/api/common/extHostNotebookKernels';
 import { ExtensionIdentifier } from 'vs/platform/extensions/common/extensions';
+import { IExtHostInitDataService } from 'vs/workbench/api/common/extHostInitDataService';
 
 suite('NotebookKernel', function () {
 
@@ -28,7 +29,7 @@ suite('NotebookKernel', function () {
 			override $registerCommand() { }
 		});
 		rpcProtocol.set(MainContext.MainThreadNotebookKernels, new class extends mock<MainThreadNotebookKernelsShape>() {
-			override $addKernel(handle: number, data: INotebookKernelDto2): void {
+			override async $addKernel(handle: number, data: INotebookKernelDto2): Promise<void> {
 				kernelData.set(handle, data);
 			}
 			override $removeKernel(handle: number) {
@@ -42,18 +43,22 @@ suite('NotebookKernel', function () {
 
 		extHostNotebookKernels = new ExtHostNotebookKernels(
 			rpcProtocol,
+			new class extends mock<IExtHostInitDataService>() { },
 			new class extends mock<ExtHostNotebookController>() { }
 		);
 	});
 
 	test('create/dispose kernel', async function () {
 
-		const kernel = extHostNotebookKernels.createKernel(nullExtensionDescription, { id: 'foo', label: 'Foo', selector: '*', executeHandler: () => { }, supportedLanguages: ['plaintext'] });
+		const kernel = extHostNotebookKernels.createNotebookController(nullExtensionDescription, 'foo', '*', 'Foo');
+
+		assert.throws(() => (<any>kernel).id = 'dd');
+		assert.throws(() => (<any>kernel).viewType = 'dd');
 
 		assert.ok(kernel);
 		assert.strictEqual(kernel.id, 'foo');
 		assert.strictEqual(kernel.label, 'Foo');
-		assert.strictEqual(kernel.selector, '*');
+		assert.strictEqual(kernel.viewType, '*');
 
 		await rpcProtocol.sync();
 		assert.strictEqual(kernelData.size, 1);
@@ -62,7 +67,7 @@ suite('NotebookKernel', function () {
 		assert.strictEqual(first.id, 'foo');
 		assert.strictEqual(ExtensionIdentifier.equals(first.extensionId, nullExtensionDescription.identifier), true);
 		assert.strictEqual(first.label, 'Foo');
-		assert.strictEqual(first.selector, '*');
+		assert.strictEqual(first.viewType, '*');
 
 		kernel.dispose();
 		await rpcProtocol.sync();
@@ -71,7 +76,7 @@ suite('NotebookKernel', function () {
 
 	test('update kernel', async function () {
 
-		const kernel = extHostNotebookKernels.createKernel(nullExtensionDescription, { id: 'foo', label: 'Foo', selector: '*', executeHandler: () => { }, supportedLanguages: ['plaintext'] });
+		const kernel = extHostNotebookKernels.createNotebookController(nullExtensionDescription, 'foo', '*', 'Foo');
 
 		await rpcProtocol.sync();
 		assert.ok(kernel);

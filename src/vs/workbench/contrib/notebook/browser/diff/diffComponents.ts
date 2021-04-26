@@ -481,8 +481,6 @@ abstract class AbstractElementRenderer extends Disposable {
 			const keys = new Set([...Object.keys(newMetadataObj)]);
 			for (let key of keys) {
 				switch (key as keyof NotebookCellMetadata) {
-					case 'breakpointMargin':
-					case 'editable':
 					case 'inputCollapsed':
 					case 'outputCollapsed':
 						// boolean
@@ -494,7 +492,6 @@ abstract class AbstractElementRenderer extends Disposable {
 						break;
 
 					case 'executionOrder':
-					case 'lastRunDuration':
 						// number
 						if (typeof newMetadataObj[key] === 'number') {
 							result[key] = newMetadataObj[key];
@@ -505,14 +502,6 @@ abstract class AbstractElementRenderer extends Disposable {
 					case 'runState':
 						// enum
 						if (typeof newMetadataObj[key] === 'number' && [1, 2, 3, 4].indexOf(newMetadataObj[key]) >= 0) {
-							result[key] = newMetadataObj[key];
-						} else {
-							result[key] = currentMetadata[key as keyof NotebookCellMetadata];
-						}
-						break;
-					case 'statusMessage':
-						// string
-						if (typeof newMetadataObj[key] === 'string') {
 							result[key] = newMetadataObj[key];
 						} else {
 							result[key] = currentMetadata[key as keyof NotebookCellMetadata];

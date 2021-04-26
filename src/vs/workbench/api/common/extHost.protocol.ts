@@ -50,13 +50,14 @@ import { TunnelDto } from 'vs/workbench/api/common/extHostTunnelService';
 import { TunnelCreationOptions, TunnelProviderFeatures, TunnelOptions, ProvidedPortAttributes } from 'vs/platform/remote/common/tunnel';
 import { Timeline, TimelineChangeEvent, TimelineOptions, TimelineProviderDescriptor, InternalTimelineOptions } from 'vs/workbench/contrib/timeline/common/timeline';
 import { revive } from 'vs/base/common/marshalling';
-import { NotebookCellMetadata, NotebookDocumentMetadata, ICellEditOperation, NotebookCellsChangedEventDto, NotebookDataDto, IMainCellDto, INotebookDocumentFilter, TransientMetadata, ICellRange, INotebookDecorationRenderOptions, INotebookExclusiveDocumentFilter, IOutputDto, TransientOptions, IImmediateCellEditOperation, INotebookCellStatusBarItem } from 'vs/workbench/contrib/notebook/common/notebookCommon';
+import { NotebookCellMetadata, NotebookDocumentMetadata, ICellEditOperation, NotebookCellsChangedEventDto, NotebookDataDto, IMainCellDto, TransientCellMetadata, INotebookDecorationRenderOptions, INotebookExclusiveDocumentFilter, IOutputDto, TransientOptions, IImmediateCellEditOperation, INotebookCellStatusBarItem, TransientDocumentMetadata } from 'vs/workbench/contrib/notebook/common/notebookCommon';
+import { ICellRange } from 'vs/workbench/contrib/notebook/common/notebookRange';
 import { CallHierarchyItem } from 'vs/workbench/contrib/callHierarchy/common/callHierarchy';
 import { Dto } from 'vs/base/common/types';
 import { DebugConfigurationProviderTriggerKind, TestResultState } from 'vs/workbench/api/common/extHostTypes';
 import { IAccessibilityInformation } from 'vs/platform/accessibility/common/accessibility';
 import { IExtensionIdWithVersion } from 'vs/platform/userDataSync/common/extensionsStorageSync';
-import { InternalTestItem, RunTestForProviderRequest, RunTestsRequest, TestIdWithSrc, TestsDiff, ISerializedTestResults, ITestMessage } from 'vs/workbench/contrib/testing/common/testCollection';
+import { InternalTestItem, RunTestForProviderRequest, RunTestsRequest, TestIdWithSrc, TestsDiff, ISerializedTestResults, ITestMessage, ITestItem, ITestRunTask, ExtensionRunTestsRequest } from 'vs/workbench/contrib/testing/common/testCollection';
 import { CandidatePort } from 'vs/workbench/services/remote/common/remoteExplorerService';
 import { WorkspaceTrustRequestOptions } from 'vs/platform/workspace/common/workspaceTrust';
 import { ISerializableEnvironmentVariableCollection } from 'vs/workbench/contrib/terminal/common/environmentVariable';
@@ -874,22 +875,19 @@ export interface INotebookCellStatusBarListDto {
 export interface MainThreadNotebookShape extends IDisposable {
 	$registerNotebookProvider(extension: NotebookExtensionDescription, viewType: string, options: {
 		transientOutputs: boolean;
-		transientMetadata: TransientMetadata;
+		transientCellMetadata: TransientCellMetadata;
+		transientDocumentMetadata: TransientDocumentMetadata;
 		viewOptions?: { displayName: string; filenamePattern: (string | IRelativePattern | INotebookExclusiveDocumentFilter)[]; exclusive: boolean; };
 	}): Promise<void>;
-	$updateNotebookProviderOptions(viewType: string, options?: { transientOutputs: boolean; transientMetadata: TransientMetadata; }): Promise<void>;
+	$updateNotebookProviderOptions(viewType: string, options?: { transientOutputs: boolean; transientCellMetadata: TransientCellMetadata; transientDocumentMetadata: TransientDocumentMetadata; }): Promise<void>;
 	$unregisterNotebookProvider(viewType: string): Promise<void>;
 
 	$registerNotebookSerializer(handle: number, extension: NotebookExtensionDescription, viewType: string, options: TransientOptions): void;
 	$unregisterNotebookSerializer(handle: number): void;
 
-	$registerNotebookKernelProvider(extension: NotebookExtensionDescription, handle: number, documentFilter: INotebookDocumentFilter): Promise<void>;
-	$unregisterNotebookKernelProvider(handle: number): Promise<void>;
-	$registerNotebookCellStatusBarItemProvider(handle: number, eventHandle: number | undefined, documentFilter: INotebookDocumentFilter): Promise<void>;
+	$registerNotebookCellStatusBarItemProvider(handle: number, eventHandle: number | undefined, selector: NotebookSelector): Promise<void>;
 	$unregisterNotebookCellStatusBarItemProvider(handle: number, eventHandle: number | undefined): Promise<void>;
 	$emitCellStatusBarEvent(eventHandle: number): void;
-	$onNotebookKernelChange(handle: number, uri: UriComponents | undefined): void;
-	$postMessage(editorId: string, forRendererId: string | undefined, value: any): Promise<boolean>;
 }
 
 export interface MainThreadNotebookEditorsShape extends IDisposable {
@@ -899,10 +897,6 @@ export interface MainThreadNotebookEditorsShape extends IDisposable {
 	$removeNotebookEditorDecorationType(key: string): void;
 	$trySetDecorations(id: string, range: ICellRange, decorationKey: string): void;
 	$tryApplyEdits(editorId: string, modelVersionId: number, cellEdits: ICellEditOperation[]): Promise<boolean>
-
-	$addRendererIpc(rendererId: string, handle: number): Promise<void>;
-	$removeRendererIpc(rendererId: string, handle: number): void;
-	$postRendererIpcMessage(rendererId: string, handle: number, editorId: string | undefined, message: unknown): Promise<boolean>;
 }
 
 export interface MainThreadNotebookDocumentsShape extends IDisposable {
@@ -913,22 +907,24 @@ export interface MainThreadNotebookDocumentsShape extends IDisposable {
 
 export interface INotebookKernelDto2 {
 	id: string;
-	selector: NotebookSelector;
+	viewType: string;
 	extensionId: ExtensionIdentifier;
 	extensionLocation: UriComponents;
 	label: string;
+	detail?: string;
 	description?: string;
-	isPreferred?: boolean;
-	supportedLanguages: string[];
+	supportedLanguages?: string[];
 	supportsInterrupt?: boolean;
 	hasExecutionOrder?: boolean;
 	preloads?: { uri: UriComponents; provides: string[] }[];
 }
 
 export interface MainThreadNotebookKernelsShape extends IDisposable {
-	$addKernel(handle: number, data: INotebookKernelDto2): void;
+	$postMessage(handle: number, editorId: string | undefined, message: any): Promise<boolean>;
+	$addKernel(handle: number, data: INotebookKernelDto2): Promise<void>;
 	$updateKernel(handle: number, data: Partial<INotebookKernelDto2>): void;
 	$removeKernel(handle: number): void;
+	$updateNotebookPriority(handle: number, uri: UriComponents, value: number | undefined): void;
 }
 
 export interface MainThreadUrlsShape extends IDisposable {
@@ -1244,7 +1240,7 @@ export interface ExtHostWorkspaceShape {
 	$initializeWorkspace(workspace: IWorkspaceData | null, trusted: boolean): void;
 	$acceptWorkspaceData(workspace: IWorkspaceData | null): void;
 	$handleTextSearchResult(result: search.IRawFileMatch2, requestId: number): void;
-	$onDidReceiveWorkspaceTrust(): void;
+	$onDidGrantWorkspaceTrust(): void;
 }
 
 export interface ExtHostFileSystemInfoShape {
@@ -1342,8 +1338,8 @@ export interface IWillRunFileOperationParticipation {
 
 export interface ExtHostFileSystemEventServiceShape {
 	$onFileEvent(events: FileSystemEvents): void;
-	$onWillRunFileOperation(operation: files.FileOperation, files: SourceTargetPair[], timeout: number, token: CancellationToken): Promise<IWillRunFileOperationParticipation | undefined>;
-	$onDidRunFileOperation(operation: files.FileOperation, files: SourceTargetPair[]): void;
+	$onWillRunFileOperation(operation: files.FileOperation, files: readonly SourceTargetPair[], timeout: number, token: CancellationToken): Promise<IWillRunFileOperationParticipation | undefined>;
+	$onDidRunFileOperation(operation: files.FileOperation, files: readonly SourceTargetPair[]): void;
 }
 
 export interface ObjectIdentifier {
@@ -1721,7 +1717,6 @@ export interface ExtHostTerminalServiceShape {
 	$acceptProcessRequestInitialCwd(id: number): void;
 	$acceptProcessRequestCwd(id: number): void;
 	$acceptProcessRequestLatency(id: number): number;
-	$acceptWorkspacePermissionsChanged(isAllowed: boolean): void;
 	$getAvailableProfiles(configuredProfilesOnly: boolean): Promise<ITerminalProfile[]>;
 	$getDefaultShellAndArgs(useAutomationShell: boolean): Promise<IShellAndArgsDto>;
 	$provideLinks(id: number, line: string): Promise<ITerminalLinkDto[]>;
@@ -1927,23 +1922,16 @@ export interface INotebookKernelInfoDto2 {
 }
 
 export interface ExtHostNotebookShape extends ExtHostNotebookDocumentsAndEditorsShape, ExtHostNotebookDocumentsShape, ExtHostNotebookEditorsShape {
-	$resolveNotebookEditor(viewType: string, uri: UriComponents, editorId: string): Promise<void>;
-	$acceptNotebookActiveKernelChange(event: { uri: UriComponents, providerHandle: number | undefined, kernelFriendlyId: string | undefined }): void;
-	$provideNotebookKernels(handle: number, uri: UriComponents, token: CancellationToken): Promise<INotebookKernelInfoDto2[]>;
-	$resolveNotebookKernel(handle: number, editorId: string, uri: UriComponents, kernelId: string, token: CancellationToken): Promise<void>;
-	$executeNotebookKernelFromProvider(handle: number, uri: UriComponents, kernelId: string, cellRanges: ICellRange[]): Promise<void>;
-	$cancelNotebookCellExecution(handle: number, uri: UriComponents, kernelId: string, cellRange: ICellRange[]): Promise<void>;
 	$provideNotebookCellStatusBarItems(handle: number, uri: UriComponents, index: number, token: CancellationToken): Promise<INotebookCellStatusBarListDto | undefined>;
 	$releaseNotebookCellStatusBarItems(id: number): void;
-	$onDidReceiveMessage(editorId: string, rendererId: string | undefined, message: unknown): void;
 
 	$openNotebook(viewType: string, uri: UriComponents, backupId: string | undefined, untitledDocumentData: VSBuffer | undefined, token: CancellationToken): Promise<NotebookDataDto>;
 	$saveNotebook(viewType: string, uri: UriComponents, token: CancellationToken): Promise<boolean>;
 	$saveNotebookAs(viewType: string, uri: UriComponents, target: UriComponents, token: CancellationToken): Promise<boolean>;
 	$backupNotebook(viewType: string, uri: UriComponents, cancellation: CancellationToken): Promise<string>;
 
-	$dataToNotebook(handle: number, data: VSBuffer): Promise<NotebookDataDto>;
-	$notebookToData(handle: number, data: NotebookDataDto): Promise<VSBuffer>;
+	$dataToNotebook(handle: number, data: VSBuffer, token: CancellationToken): Promise<NotebookDataDto>;
+	$notebookToData(handle: number, data: NotebookDataDto, token: CancellationToken): Promise<VSBuffer>;
 }
 
 export interface ExtHostNotebookDocumentsAndEditorsShape {
@@ -1962,14 +1950,13 @@ export type INotebookEditorViewColumnInfo = Record<string, number>;
 export interface ExtHostNotebookEditorsShape {
 	$acceptEditorPropertiesChanged(id: string, data: INotebookEditorPropertiesChangeData): void;
 	$acceptEditorViewColumns(data: INotebookEditorViewColumnInfo): void;
-
-	$acceptEditorIpcMessage(editorId: string, rendererId: string, handles: number[], message: unknown): void;
 }
 
 export interface ExtHostNotebookKernelsShape {
 	$acceptSelection(handle: number, uri: UriComponents, value: boolean): void;
-	$executeCells(handle: number, uri: UriComponents, ranges: ICellRange[]): void;
-	$cancelCells(handle: number, uri: UriComponents, ranges: ICellRange[]): void;
+	$executeCells(handle: number, uri: UriComponents, handles: number[]): Promise<void>;
+	$cancelCells(handle: number, uri: UriComponents, handles: number[]): Promise<void>;
+	$acceptRendererMessage(handle: number, editorId: string, message: any): void;
 }
 
 export interface ExtHostStorageShape {
@@ -2012,16 +1999,39 @@ export interface ExtHostTestingShape {
 }
 
 export interface MainThreadTestingShape {
-	$registerTestProvider(id: string): void;
-	$unregisterTestProvider(id: string): void;
+	/** Registeres that there's a test controller with the given ID */
+	$registerTestController(id: string): void;
+	/** Diposes of the test controller with the given ID */
+	$unregisterTestController(id: string): void;
+	/** Requests tests from the given resource/uri, from the observer API. */
 	$subscribeToDiffs(resource: ExtHostTestingResource, uri: UriComponents): void;
+	/** Stops requesting tests from the given resource/uri, from the observer API. */
 	$unsubscribeFromDiffs(resource: ExtHostTestingResource, uri: UriComponents): void;
+	/** Publishes that new tests were available on the given source. */
 	$publishDiff(resource: ExtHostTestingResource, uri: UriComponents, diff: TestsDiff): void;
-	$updateTestStateInRun(runId: string, testId: string, state: TestResultState, duration?: number): void;
-	$appendTestMessageInRun(runId: string, testId: string, message: ITestMessage): void;
-	$appendOutputToRun(runId: string, output: VSBuffer): void;
+	/** Request by an extension to run tests. */
 	$runTests(req: RunTestsRequest, token: CancellationToken): Promise<string>;
-	$publishExtensionProvidedResults(results: ISerializedTestResults, persist: boolean): void;
+
+	// --- test run handling:
+	/**
+	 * Adds tests to the run. The tests are given in descending depth. The first
+	 * item will be a previously-known test, or a test root.
+	 */
+	$addTestsToRun(runId: string, tests: ITestItem[]): void;
+	/** Updates the state of a test run in the given run. */
+	$updateTestStateInRun(runId: string, taskId: string, testId: string, state: TestResultState, duration?: number): void;
+	/** Appends a message to a test in the run. */
+	$appendTestMessageInRun(runId: string, taskId: string, testId: string, message: ITestMessage): void;
+	/** Appends raw output to the test run.. */
+	$appendOutputToRun(runId: string, taskId: string, output: VSBuffer): void;
+	/** Signals a task in a test run started. */
+	$startedTestRunTask(runId: string, task: ITestRunTask): void;
+	/** Signals a task in a test run ended. */
+	$finishedTestRunTask(runId: string, taskId: string): void;
+	/** Start a new extension-provided test run. */
+	$startedExtensionTestRun(req: ExtensionRunTestsRequest): void;
+	/** Signals that an extension-provided test run finished. */
+	$finishedExtensionTestRun(runId: string): void;
 }
 
 // --- proxy identifiers
